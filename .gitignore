@@ -1,0 +1,15 @@
+# Visual Studio cache and local user settings
+.vs/
+*.user
+
+# Build output folders
+x64/
+OpenCVAp.*/
+
+# Heavy media files 
+Videos/
+Images/ 
+doc/ 
+
+# OpenCV library files (assuming this is the local library installation)
+OpenCV/
