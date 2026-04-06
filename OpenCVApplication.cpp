@@ -817,6 +817,189 @@ void floydSteinbergDithering() {
 	}
 }
 
+void labelingBFS() {
+	char fname[MAX_PATH];
+	while (openFileDlg(fname))
+	{
+		Mat src = imread(fname, IMREAD_GRAYSCALE);
+		Mat dst(src.rows, src.cols, CV_8UC3, Scalar(255, 255, 255));
+		Mat labels(src.rows, src.cols, CV_32SC1, Scalar(0));
+
+		std::queue<Point> q;
+		int di[8] = { 0, -1, -1, -1, 0, 1, 1, 1 };
+		int dj[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
+		int label = 1;
+		srand(time(NULL));
+
+		for (int i = 0; i < src.rows; i++) {
+			for (int j = 0; j < src.cols; j++) {
+
+				if (src.at<uchar>(i, j) != 0)
+					continue;
+
+				if (labels.at<int>(i, j) != 0)
+					continue;
+
+				q = std::queue<Point>();
+				q.push(Point(j, i));
+				labels.at<int>(i, j) = label;
+				Vec3b color(rand() % 256, rand() % 256, rand() % 256);
+
+				while (!q.empty()) {
+					Point p = q.front();
+					q.pop();
+					dst.at<Vec3b>(p.y, p.x) = color;
+
+					for (int k = 0; k < 8; k++) {
+						int ni = p.y + di[k];
+						int nj = p.x + dj[k];
+						if (ni < 0 || ni >= src.rows || nj < 0 || nj >= src.cols)
+							continue;
+
+						if (src.at<uchar>(ni, nj) != 0)
+							continue;
+						if (labels.at<int>(ni, nj) != 0)
+							continue;
+
+						labels.at<int>(ni, nj) = label;
+						q.push(Point(nj, ni));
+					}
+				}
+
+				label++;
+			}
+		}
+
+
+		imshow("input image", src);
+		imshow("BFS labeling", dst);
+	}
+}
+
+void labelingTwoPass() {
+
+	char fname[MAX_PATH];
+	while (openFileDlg(fname))
+	{
+		Mat src = imread(fname, IMREAD_GRAYSCALE);
+		if (src.empty())
+			continue;
+
+		int rows = src.rows;
+		int cols = src.cols;
+
+		Mat dst(rows, cols, CV_8UC3, Scalar(255, 255, 255));
+		Mat labels(rows, cols, CV_32SC1, Scalar(0));
+
+		std::vector<std::vector<int>> edges;
+		edges.resize(1);
+
+		int label = 0;
+		int di[4] = { 0, -1, -1, -1 };
+		int dj[4] = { -1, 0, -1, 1 };
+		for (int i = 0; i < rows; i++) {
+			for (int j = 0; j < cols; j++) {
+				if (src.at<uchar>(i, j) != 0)
+					continue;
+
+				if (labels.at<int>(i, j) != 0)
+					continue;
+				std::vector<int> L;
+				for (int k = 0; k < 4; k++) {
+					int ni = i + di[k];
+					int nj = j + dj[k];
+					if (ni < 0 || ni >= rows || nj < 0 || nj >= cols)
+						continue;
+					int nl = labels.at<int>(ni, nj);
+					if (nl > 0) {
+						if (std::find(L.begin(), L.end(), nl) == L.end())
+							L.push_back(nl);
+					}
+				}
+
+				if (L.empty()) {
+					label++;
+					labels.at<int>(i, j) = label;
+					if ((int)edges.size() <= label)
+						edges.resize(label + 1);
+				}
+				else {
+					int x = *std::min_element(L.begin(), L.end());
+					labels.at<int>(i, j) = x;
+					
+					for (int y : L) {
+						if (y == x) continue;
+						
+						int maxIdx;
+						if (x > y) {
+							maxIdx = x;
+						}
+						else maxIdx = y;
+
+						if ((int)edges.size() <= maxIdx)
+							edges.resize(maxIdx + 1);
+						if (std::find(edges[x].begin(), edges[x].end(), y) == edges[x].end())
+							edges[x].push_back(y);
+						if (std::find(edges[y].begin(), edges[y].end(), x) == edges[y].end())
+							edges[y].push_back(x);
+					}
+				}
+			}
+		}
+
+		if (label == 0) {
+			imshow("input image", src);
+			imshow("two-pass labeling", dst);
+			continue;
+		}
+
+		std::vector<int> newlabels(label + 1, 0);
+		int newlabel = 0;
+		std::queue<int> Q;
+
+		for (int i = 1; i <= label; i++) {
+			if (newlabels[i] != 0)
+				continue;
+			newlabel++;
+			newlabels[i] = newlabel;
+			while (!Q.empty()) Q.pop();
+			Q.push(i);
+			while (!Q.empty()) {
+				int x = Q.front(); Q.pop();
+				if (x < (int)edges.size()) {
+					for (int y : edges[x]) {
+						if (newlabels[y] == 0) {
+							newlabels[y] = newlabel;
+							Q.push(y);
+						}
+					}
+				}
+			}
+		}
+		RNG rng(12345);
+		std::vector<Vec3b> colors(newlabel + 1);
+		for (int i = 1; i <= newlabel; i++) {
+			colors[i] = Vec3b((uchar)rng.uniform(0, 256), (uchar)rng.uniform(0, 256), (uchar)rng.uniform(0, 256));
+		}
+		for (int i = 0; i < rows; i++) {
+			for (int j = 0; j < cols; j++) {
+				if (src.at<uchar>(i, j) == 0) {
+					int old = labels.at<int>(i, j);
+					int nl = 0;
+					if (old > 0 && old < (int)newlabels.size())
+						nl = newlabels[old];
+					if (nl > 0)
+						dst.at<Vec3b>(i, j) = colors[nl];
+				}
+			}
+		}
+
+		imshow("input image", src);
+		imshow("two-pass labeling", dst);
+		waitKey();
+	}
+}
+
 int main() 
 {
 	cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_FATAL);
@@ -850,6 +1033,8 @@ int main()
 		printf(" 20 - Histogram (grayscale image) (L03)\n");
 		printf(" 21 - Multilevel thresholding (L03)\n");
 		printf(" 22 - Floyd-Steinberg dithering (L03)\n");
+		printf(" 30 - Labeling: BFS (L05)\n");
+		printf(" 31 - Labeling: Two-pass traversal (L05)\n");
 
 		printf(" 0 - Exit\n\n");
 		printf("Option: ");
@@ -921,6 +1106,12 @@ int main()
 				break;
 			case 22:
 				floydSteinbergDithering();
+				break;
+			case 30:
+				labelingBFS();
+				break;
+			case 31:
+				labelingTwoPass();
 				break;
 		}
 
